@@ -30,6 +30,20 @@ uv run uvicorn app:app --port 8000 --reload
 
 首次啟動會自動建立 `backend/.db/app.db`，並 seed 兩個場次 `midterm` / `final`（預設關閉）。
 
+#### Docker
+
+部署或想省麻煩時，可用 Docker Compose：
+
+```bash
+cd backend
+cp .env.example .env            # 至少改 ADMIN_PASSWORD；PORT 可自訂
+docker compose up -d --build
+```
+
+- `backend/.db/` 會以 volume 掛到容器內 `/app/.db`，DB 檔永久保存在 host，備份直接複製該資料夾即可。
+- Host 與容器埠號皆由 `.env` 的 `PORT` 決定（預設 8000）。
+- 容器內 `HOST` 固定為 `0.0.0.0`，與 `.env` 裡供本機 Python 用的 `HOST=127.0.0.1` 互不干擾。
+
 ### 2. Frontend
 
 ```bash
