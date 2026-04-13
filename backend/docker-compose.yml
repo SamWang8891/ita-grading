@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: .
+    image: ita-grading-backend
+    container_name: ita-grading-backend
+    env_file: .env
+    ports:
+      # Host:container — both default to 8000 unless PORT set in .env
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      # SQLite lives here; back up by copying ./.db on host.
+      - ./.db:/app/.db
+    restart: unless-stopped
