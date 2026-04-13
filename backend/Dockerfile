@@ -6,10 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN pip install .
-
 COPY . .
+RUN pip install .
 
 # Persist DB outside the image; mount host dir to /app/.db.
 VOLUME ["/app/.db"]
