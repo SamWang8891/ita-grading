@@ -13,12 +13,17 @@ export default function Login() {
   const { refresh } = useSession()
   const navigate = useNavigate()
 
+  const normalizeId = (raw) => {
+    const s = raw.trim()
+    return /^b\d{8}$/.test(s) ? 'B' + s.slice(1) : s
+  }
+
   const handleIdentify = async (e) => {
     e.preventDefault()
     if (!identifier.trim()) return
     setBusy(true); setError('')
     try {
-      const res = await api.post('/api/auth/identify', { identifier: identifier.trim() })
+      const res = await api.post('/api/auth/identify', { identifier: normalizeId(identifier) })
       if (res.need_password) {
         setRole(res.role)
         setStage('password')
@@ -36,7 +41,7 @@ export default function Login() {
     e.preventDefault()
     setBusy(true); setError('')
     try {
-      await api.post('/api/auth/password', { identifier: identifier.trim(), password })
+      await api.post('/api/auth/password', { identifier: normalizeId(identifier), password })
       await refresh()
       navigate('/', { replace: true })
     } catch (err) {
