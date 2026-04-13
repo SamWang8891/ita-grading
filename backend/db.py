@@ -39,10 +39,29 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Apply every .sql file in migrations/ (idempotent)."""
-    with connect() as conn:
+    """Apply unapplied .sql migrations in order, tracking each in _migrations."""
+    conn = connect()
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS _migrations ("
+            "  filename TEXT PRIMARY KEY,"
+            "  applied_at TEXT NOT NULL DEFAULT (datetime('now'))"
+            ")"
+        )
+        applied = {
+            r["filename"]
+            for r in conn.execute("SELECT filename FROM _migrations").fetchall()
+        }
         for sql_file in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            if sql_file.name in applied:
+                continue
             conn.executescript(sql_file.read_text(encoding="utf-8"))
+            conn.execute(
+                "INSERT INTO _migrations (filename) VALUES (?)", (sql_file.name,)
+            )
+            conn.commit()
+    finally:
+        conn.close()
 
 
 def get_db() -> "Iterator[sqlite3.Connection]":

@@ -1,6 +1,6 @@
 -- Migration 002: Allow self-evaluation by removing the grader <> target CHECK constraint.
 -- SQLite cannot ALTER TABLE to drop a constraint, so we recreate the table.
--- Safe to re-run: produces identical results each time.
+-- Tracked by _migrations table; runs only once.
 
 PRAGMA foreign_keys = OFF;
 
