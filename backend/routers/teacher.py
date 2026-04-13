@@ -127,10 +127,20 @@ def student_detail(
             result.append(d)
         return result
 
+    self_eval = conn.execute(
+        "SELECT * FROM latest_submissions "
+        "WHERE period_code = ? AND grader_student_id = ? AND target_student_id = ?",
+        (period, sid, sid),
+    ).fetchone()
+    self_eval_dict = None
+    if self_eval is not None:
+        self_eval_dict = _strip_self(self_eval)
+
     return {
         "student": dict(student),
         "received": pack(received, "grader_name"),
         "given": pack(given, "target_name"),
+        "self_evaluation": self_eval_dict,
     }
 
 

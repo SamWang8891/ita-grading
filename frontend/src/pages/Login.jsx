@@ -3,36 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useSession } from '../auth/SessionContext.jsx'
 
-function NoticeModal({ onConfirm }) {
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 1000,
-      background: 'rgba(16, 24, 40, 0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '20px',
-    }}>
-      <div className="card stack" style={{ maxWidth: 400, width: '100%', gap: 20 }}>
-        <div className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
-          <span className="material-symbols-rounded warn" style={{ fontSize: 28, flexShrink: 0, marginTop: 2 }}>
-            warning
-          </span>
-          <div>
-            <h2 style={{ marginBottom: 8 }}>注意事項</h2>
-            <p style={{ margin: 0, lineHeight: 1.7 }}>
-              您的任何操作紀錄將會被紀錄，請勿未經過他人授權使用他人帳號登入！
-            </p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="primary" onClick={onConfirm} autoFocus>
-            我已了解
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function Login() {
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -40,7 +10,6 @@ export default function Login() {
   const [role, setRole] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [showNotice, setShowNotice] = useState(false)
   const { refresh } = useSession()
   const navigate = useNavigate()
 
@@ -55,7 +24,7 @@ export default function Login() {
         setStage('password')
       } else {
         await refresh()
-        setShowNotice(true)
+        navigate('/', { replace: true })
       }
     } catch (err) {
       setError(err.status === 429 ? '嘗試次數過多，請稍後再試' :
@@ -69,7 +38,7 @@ export default function Login() {
     try {
       await api.post('/api/auth/password', { identifier: identifier.trim(), password })
       await refresh()
-      setShowNotice(true)
+      navigate('/', { replace: true })
     } catch (err) {
       setError(err.status === 401 ? '密碼錯誤' :
                err.status === 429 ? '嘗試次數過多，請稍後再試' : err.message)
@@ -77,16 +46,16 @@ export default function Login() {
   }
 
   return (
-    <>
-      {showNotice && (
-        <NoticeModal onConfirm={() => navigate('/', { replace: true })} />
-      )}
-      <main className="page" style={{ maxWidth: 440 }}>
-        <div className="card stack">
-          <div>
-            <h1>登入</h1>
-            <p className="muted">學生輸入學號即可；老師 / 管理員請接著輸入密碼。</p>
-          </div>
+    <main className="page" style={{ maxWidth: 440 }}>
+      <div className="card stack">
+        <div>
+          <h1>登入</h1>
+          <p className="muted">學生輸入學號即可；老師 / 管理員請接著輸入密碼。</p>
+        </div>
+
+        <div className="warn" style={{ fontSize: 13, lineHeight: 1.6 }}>
+          您的任何操作紀錄將會被紀錄，請勿未經過他人授權使用他人帳號登入！
+        </div>
 
           {stage === 'identify' ? (
             <form onSubmit={handleIdentify} className="stack">
@@ -150,6 +119,5 @@ export default function Login() {
           </a>
         </footer>
       </main>
-    </>
   )
 }

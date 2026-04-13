@@ -73,6 +73,34 @@ export default function TeacherStudentDetail() {
           </section>
 
           <section className="card stack">
+            <h3>自我評分（最新版本）</h3>
+            {data.self_evaluation ? (
+              <table>
+                <thead>
+                  <tr>
+                    <th>主題</th><th>內容</th><th>敘事</th><th>簡報</th><th>團隊</th>
+                    <th>總分</th><th>備註</th><th>時間</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{data.self_evaluation.score_topic}</td>
+                    <td>{data.self_evaluation.score_content}</td>
+                    <td>{data.self_evaluation.score_narrative}</td>
+                    <td>{data.self_evaluation.score_presentation}</td>
+                    <td>{data.self_evaluation.score_teamwork}</td>
+                    <td><strong>{data.self_evaluation.total}</strong></td>
+                    <td>{data.self_evaluation.note}</td>
+                    <td className="muted">{data.self_evaluation.submitted_at}</td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <div className="muted">尚未提交自我評分。</div>
+            )}
+          </section>
+
+          <section className="card stack">
             <h3>此同學送出的評分（最新版本）</h3>
             <table>
               <thead>
