@@ -9,7 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth import CurrentUser, hash_password, require_role
 from db import get_db
-from models import PeriodPatch, StudentIn, StudentPatch, TeacherIn, TeacherPasswordResetIn
+from models import (
+    PeriodPatch,
+    StudentIn,
+    StudentPatch,
+    StudentsImportIn,
+    TeacherIn,
+    TeacherPasswordResetIn,
+)
 from routers.common import log_event
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -48,6 +55,30 @@ def add_student(
     log_event(conn, request, "admin_add_student", "admin", user.actor_id,
               {"student_id": body.student_id})
     return {"student_id": body.student_id}
+
+
+@router.post("/students/import")
+def import_students(
+    body: StudentsImportIn,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: CurrentUser = Depends(require_role("admin")),
+):
+    inserted = 0
+    skipped: List[str] = []
+    for s in body.students:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO permitted_users (student_id, name, class_name)"
+            " VALUES (?, ?, ?)",
+            (s.student_id, s.name, s.class_name),
+        )
+        if cur.rowcount == 1:
+            inserted += 1
+        else:
+            skipped.append(s.student_id)
+    log_event(conn, request, "admin_import_students", "admin", user.actor_id,
+              {"inserted": inserted, "skipped": len(skipped)})
+    return {"inserted": inserted, "skipped": len(skipped), "skipped_ids": skipped}
 
 
 @router.patch("/students/{sid}")

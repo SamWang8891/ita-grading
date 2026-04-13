@@ -19,6 +19,23 @@ def test_add_edit_student(app_client):
     assert r3.json()["name"] == "Renamed"
 
 
+def test_import_students(app_client):
+    seed(app_client)
+    login_admin(app_client)
+    r = app_client.post("/api/admin/students/import", json={
+        "students": [
+            {"student_id": "B001", "name": "dup", "class_name": "X"},  # already exists
+            {"student_id": "B100", "name": "New1", "class_name": "A"},
+            {"student_id": "B101", "name": "New2", "class_name": "A"},
+        ]
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["inserted"] == 2
+    assert body["skipped"] == 1
+    assert "B001" in body["skipped_ids"]
+
+
 def test_delete_requires_no_submissions(app_client):
     seed(app_client)
     login_student(app_client, "B001")

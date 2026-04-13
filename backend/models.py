@@ -73,6 +73,19 @@ class StudentIn(BaseModel):
     class_name: str = Field(min_length=1, max_length=64)
 
 
+class StudentsImportIn(BaseModel):
+    students: List[StudentIn]
+
+    @field_validator("students")
+    @classmethod
+    def non_empty(cls, v: "List[StudentIn]") -> "List[StudentIn]":
+        if not v:
+            raise ValueError("students must not be empty")
+        if len(v) > 2000:
+            raise ValueError("too many rows (max 2000)")
+        return v
+
+
 class StudentPatch(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=64)
     class_name: Optional[str] = Field(default=None, min_length=1, max_length=64)

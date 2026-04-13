@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import * as XLSX from 'xlsx'
 import { api } from '../api/client'
 
 const TABS = [
@@ -77,6 +78,8 @@ function StudentsTab() {
 
   return (
     <div className="stack">
+      <ImportStudents onDone={load} />
+
       <form onSubmit={add} className="card stack">
         <h3 style={{ margin: 0 }}>新增學生</h3>
         <div className="row">
@@ -113,6 +116,193 @@ function StudentsTab() {
     </div>
   )
 }
+
+function ImportStudents({ onDone }) {
+  const [filename, setFilename] = useState('')
+  const [sheets, setSheets] = useState([])      // [{ name, rows: string[][] }]
+  const [sheetIdx, setSheetIdx] = useState(0)
+  const [headerRow, setHeaderRow] = useState(1) // 1-indexed
+  const [cols, setCols] = useState({ student_id: -1, name: -1, class_name: -1 })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const currentSheet = sheets[sheetIdx]
+  const maxCols = useMemo(
+    () => currentSheet ? Math.max(0, ...currentSheet.rows.map((r) => r.length)) : 0,
+    [currentSheet],
+  )
+  const headerCells = useMemo(() => {
+    if (!currentSheet) return []
+    const row = currentSheet.rows[headerRow - 1] || []
+    return Array.from({ length: maxCols }, (_, i) =>
+      (row[i] ?? '').toString().trim() || `第 ${i + 1} 欄`
+    )
+  }, [currentSheet, headerRow, maxCols])
+
+  const dataRows = useMemo(() => {
+    if (!currentSheet) return []
+    return currentSheet.rows.slice(headerRow)
+  }, [currentSheet, headerRow])
+
+  const mapped = useMemo(() => {
+    if (cols.student_id < 0 || cols.name < 0 || cols.class_name < 0) return []
+    return dataRows
+      .map((r) => ({
+        student_id: (r[cols.student_id] ?? '').toString().trim(),
+        name: (r[cols.name] ?? '').toString().trim(),
+        class_name: (r[cols.class_name] ?? '').toString().trim(),
+      }))
+      .filter((s) => s.student_id)
+  }, [dataRows, cols])
+
+  const pickFile = async (file) => {
+    setMsg(null)
+    if (!file) return
+    setFilename(file.name)
+    try {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const next = wb.SheetNames.map((name) => ({
+        name,
+        rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' }),
+      }))
+      setSheets(next)
+      setSheetIdx(0)
+      setHeaderRow(1)
+      setCols({ student_id: -1, name: -1, class_name: -1 })
+    } catch (err) {
+      setMsg({ kind: 'err', text: `讀檔失敗：${err.message}` })
+    }
+  }
+
+  const tryAuto = () => {
+    // auto-detect by header keywords
+    const hit = (keywords) => headerCells.findIndex(
+      (h) => keywords.some((k) => h.toString().includes(k))
+    )
+    const sid = hit(['學號', 'student', 'id', 'ID'])
+    const nm = hit(['姓名', 'name', '名字'])
+    const cls = hit(['班級', 'class', '系級'])
+    setCols({
+      student_id: sid >= 0 ? sid : cols.student_id,
+      name: nm >= 0 ? nm : cols.name,
+      class_name: cls >= 0 ? cls : cols.class_name,
+    })
+  }
+
+  const handleImport = async () => {
+    if (!mapped.length) return
+    setBusy(true); setMsg(null)
+    try {
+      const r = await api.post('/api/admin/students/import', { students: mapped })
+      setMsg({
+        kind: 'ok',
+        text: `匯入 ${r.inserted} 筆，略過 ${r.skipped} 筆${r.skipped ? `（已存在：${r.skipped_ids.slice(0, 10).join(', ')}${r.skipped_ids.length > 10 ? '…' : ''}）` : ''}。`,
+      })
+      onDone?.()
+    } catch (err) {
+      setMsg({ kind: 'err', text: err.message })
+    } finally { setBusy(false) }
+  }
+
+  const colOptions = [
+    <option key="-1" value={-1}>— 選擇欄 —</option>,
+    ...headerCells.map((h, i) => <option key={i} value={i}>{`${i + 1}. ${h}`}</option>),
+  ]
+
+  return (
+    <div className="card stack">
+      <h3 style={{ margin: 0 }}>從 Excel 批次匯入</h3>
+      <p className="muted" style={{ margin: 0 }}>
+        支援 .xls / .xlsx。重複學號會自動略過，不會覆蓋。
+      </p>
+      <div className="row">
+        <label className="button-like">
+          <input type="file" accept=".xls,.xlsx" style={{ display: 'none' }}
+            onChange={(e) => pickFile(e.target.files?.[0])} />
+          選擇檔案
+        </label>
+        {filename && <span className="muted">{filename}</span>}
+      </div>
+
+      {currentSheet && (
+        <>
+          <div className="row">
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">工作表</span>
+              <select value={sheetIdx} onChange={(e) => setSheetIdx(Number(e.target.value))}>
+                {sheets.map((s, i) => <option key={i} value={i}>{s.name}</option>)}
+              </select>
+            </label>
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">標題在第幾列</span>
+              <input type="number" min={1} max={20} style={{ width: 80 }}
+                value={headerRow}
+                onChange={(e) => setHeaderRow(Math.max(1, Number(e.target.value) || 1))} />
+            </label>
+            <button type="button" className="ghost" onClick={tryAuto} style={{ alignSelf: 'end' }}>
+              自動對應欄位
+            </button>
+          </div>
+
+          <div className="row">
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">學號欄</span>
+              <select value={cols.student_id}
+                onChange={(e) => setCols((c) => ({ ...c, student_id: Number(e.target.value) }))}>
+                {colOptions}
+              </select>
+            </label>
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">姓名欄</span>
+              <select value={cols.name}
+                onChange={(e) => setCols((c) => ({ ...c, name: Number(e.target.value) }))}>
+                {colOptions}
+              </select>
+            </label>
+            <label className="stack" style={{ gap: 4 }}>
+              <span className="muted">班級欄</span>
+              <select value={cols.class_name}
+                onChange={(e) => setCols((c) => ({ ...c, class_name: Number(e.target.value) }))}>
+                {colOptions}
+              </select>
+            </label>
+          </div>
+
+          {mapped.length > 0 && (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr><th>預覽（前 5 筆 / 共 {mapped.length} 筆）</th></tr>
+                  <tr><th>學號</th><th>姓名</th><th>班級</th></tr>
+                </thead>
+                <tbody>
+                  {mapped.slice(0, 5).map((s, i) => (
+                    <tr key={i}>
+                      <td>{s.student_id}</td>
+                      <td>{s.name}</td>
+                      <td>{s.class_name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="row">
+            <button className="primary" onClick={handleImport}
+              disabled={busy || !mapped.length}>
+              {busy ? '匯入中…' : `匯入 ${mapped.length} 筆`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {msg && <div className={msg.kind === 'err' ? 'err' : 'ok'}>{msg.text}</div>}
+    </div>
+  )
+}
+
 
 function TeachersTab() {
   const [rows, setRows] = useState([])
