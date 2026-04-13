@@ -41,8 +41,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   submitted_at        TEXT NOT NULL DEFAULT (datetime('now')),
   source              TEXT NOT NULL,
   ua                  TEXT,
-  ip                  TEXT,
-  CHECK (grader_student_id <> target_student_id)
+  ip                  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_subs_lookup
   ON submissions (period_code, grader_student_id, target_student_id, submitted_at DESC);

@@ -39,7 +39,7 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Apply unapplied .sql migrations in order, tracking each in _migrations."""
+    """Apply .sql migrations (tracked), then run Python upgrade steps."""
     conn = connect()
     try:
         conn.execute(
@@ -60,8 +60,66 @@ def init_db() -> None:
                 "INSERT INTO _migrations (filename) VALUES (?)", (sql_file.name,)
             )
             conn.commit()
+        _upgrade_remove_self_eval_check(conn)
     finally:
         conn.close()
+
+
+_NEW_SUBMISSIONS_DDL = """\
+CREATE TABLE submissions_v2 (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  period_code         TEXT NOT NULL REFERENCES evaluation_periods(code),
+  grader_student_id   TEXT NOT NULL REFERENCES permitted_users(student_id),
+  target_student_id   TEXT NOT NULL REFERENCES permitted_users(student_id),
+  score_topic         INTEGER NOT NULL CHECK (score_topic        BETWEEN 0 AND 30),
+  score_content       INTEGER NOT NULL CHECK (score_content      BETWEEN 0 AND 30),
+  score_narrative     INTEGER NOT NULL CHECK (score_narrative    BETWEEN 0 AND 20),
+  score_presentation  INTEGER NOT NULL CHECK (score_presentation BETWEEN 0 AND 10),
+  score_teamwork      INTEGER NOT NULL CHECK (score_teamwork     BETWEEN 0 AND 10),
+  comment             TEXT NOT NULL DEFAULT '',
+  self_note           TEXT NOT NULL DEFAULT '',
+  submitted_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  source              TEXT NOT NULL,
+  ua                  TEXT,
+  ip                  TEXT
+)"""
+
+
+def _upgrade_remove_self_eval_check(conn: sqlite3.Connection) -> None:
+    """One-time: remove grader<>target CHECK from submissions if present."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='submissions'"
+    ).fetchone()
+    if row is None or "grader_student_id <> target_student_id" not in row["sql"]:
+        return  # fresh install or already upgraded
+
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS submissions_v2")
+        conn.execute(_NEW_SUBMISSIONS_DDL)
+        conn.execute("INSERT INTO submissions_v2 SELECT * FROM submissions")
+        conn.execute("DROP TABLE submissions")
+        conn.execute("ALTER TABLE submissions_v2 RENAME TO submissions")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subs_lookup"
+            " ON submissions (period_code, grader_student_id, target_student_id,"
+            " submitted_at DESC)"
+        )
+        conn.execute("DROP VIEW IF EXISTS latest_submissions")
+        conn.execute(
+            "CREATE VIEW latest_submissions AS"
+            " SELECT s.* FROM submissions s"
+            " JOIN ("
+            "   SELECT period_code, grader_student_id, target_student_id,"
+            "   MAX(id) AS max_id FROM submissions"
+            "   GROUP BY period_code, grader_student_id, target_student_id"
+            " ) m ON m.max_id = s.id"
+        )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+    # Clean up artefacts from earlier migration attempts
+    conn.execute("DROP VIEW IF EXISTS latest_self_evaluations")
+    conn.execute("DROP TABLE IF EXISTS self_evaluations")
 
 
 def get_db() -> "Iterator[sqlite3.Connection]":
