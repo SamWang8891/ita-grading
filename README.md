@@ -108,17 +108,23 @@ cd frontend && npm test
 
 | 變數 | 預設 | 說明 |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | （空） | 後端 API base URL。留空時走 same-origin（dev 靠 Vite proxy）。跨網域部署（例如 Cloudflare Pages / Workers + 自建後端）必填，例：`https://api.example.com`。**此變數在 build 時注入**，於 Cloudflare Pages 請加在「Settings → Environment variables → Production / Preview」。 |
+| `VITE_API_BASE_URL` | （空） | 後端 API base URL。留空時走 same-origin（dev 靠 Vite proxy）。跨網域部署（例如 Cloudflare Workers + 自建後端）必填，例：`https://api.example.com`。**此變數在 build 時注入**，於 Cloudflare Dashboard 的 Worker 設定 → Settings → Variables and Secrets 加上。 |
 
-### 跨網域部署示意（Cloudflare Pages + 自建後端）
+### 跨網域部署（Cloudflare Workers + 自建後端）
 
-- Frontend（Cloudflare Pages）環境變數：`VITE_API_BASE_URL=https://api.example.com`
-- Backend（自建，https）`.env`：
-  ```
-  ALLOWED_ORIGINS=https://myapp.pages.dev
-  COOKIE_SECURE=1
-  COOKIE_SAMESITE=none
-  ```
+前端用 Cloudflare Workers 靜態資源（SPA 模式）部署，設定檔是 `frontend/wrangler.jsonc`。
+
+- 在 Cloudflare Dashboard 建立 Worker，綁到此 GitHub repo，root directory 設 `frontend`，build 指令 `npm run build`，deploy 指令 `npx wrangler deploy`
+- Build environment variables：`VITE_API_BASE_URL=https://api.example.com`（你的後端網域）
+- 本機預覽（用 workerd 模擬）：`cd frontend && npm run preview`
+- 手動部署（已登入 `wrangler login`）：`cd frontend && npm run deploy`
+
+Backend（自建，https）`.env`：
+```
+ALLOWED_ORIGINS=https://ita-grading.<你的帳號>.workers.dev
+COOKIE_SECURE=1
+COOKIE_SAMESITE=none
+```
 
 ## 部署建議
 
