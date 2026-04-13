@@ -103,3 +103,11 @@ class TeacherPasswordResetIn(BaseModel):
 
 class PeriodPatch(BaseModel):
     is_open: bool
+
+
+class AdminGradeIn(BaseModel):
+    period: str = Field(min_length=1, max_length=32)
+    grader_student_id: str = Field(min_length=1, max_length=32)
+    target_student_id: str = Field(min_length=1, max_length=32)
+    scores: Scores
+    comment: str = Field(default="", max_length=4000)

@@ -6,6 +6,7 @@ const TABS = [
   { key: 'students', label: '學生白名單' },
   { key: 'teachers', label: '老師帳號' },
   { key: 'periods',  label: '場次開關' },
+  { key: 'grades',   label: '評分管理' },
   { key: 'activity', label: '活動紀錄' },
 ]
 
@@ -26,6 +27,7 @@ export default function AdminPanel() {
       {tab === 'students' && <StudentsTab />}
       {tab === 'teachers' && <TeachersTab />}
       {tab === 'periods'  && <PeriodsTab />}
+      {tab === 'grades'   && <GradesTab />}
       {tab === 'activity' && <ActivityTab />}
     </main>
   )
@@ -405,6 +407,196 @@ function PeriodsTab() {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+const FIELDS = [
+  { key: 'topic',        label: '主題', max: 30 },
+  { key: 'content',      label: '內容', max: 30 },
+  { key: 'narrative',    label: '敘事', max: 20 },
+  { key: 'presentation', label: '簡報', max: 10 },
+  { key: 'teamwork',     label: '團隊', max: 10 },
+]
+
+function GradesTab() {
+  const [periods, setPeriods] = useState([])
+  const [period, setPeriod] = useState('')
+  const [overview, setOverview] = useState([])
+  const [targetId, setTargetId] = useState(null)
+  const [grades, setGrades] = useState([])
+  const [editing, setEditing] = useState(null) // { grader_student_id, scores, comment }
+  const [msg, setMsg] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.get('/api/admin/periods').then((ps) => {
+      setPeriods(ps)
+      if (ps.length && !period) setPeriod(ps[0].code)
+    })
+  }, [])
+
+  const loadOverview = () => {
+    if (!period) return
+    api.get('/api/admin/grades', { query: { period } }).then(setOverview)
+  }
+  useEffect(() => { loadOverview(); setTargetId(null) }, [period])
+
+  const loadDetail = (tid) => {
+    setTargetId(tid)
+    setEditing(null); setMsg(null)
+    api.get('/api/admin/grades', { query: { period, target_id: tid } }).then(setGrades)
+  }
+
+  const startEdit = (row) => {
+    setEditing({
+      grader_student_id: row.grader_student_id,
+      scores: {
+        topic: row.score_topic, content: row.score_content, narrative: row.score_narrative,
+        presentation: row.score_presentation, teamwork: row.score_teamwork,
+      },
+      comment: row.comment || '',
+    })
+    setMsg(null)
+  }
+
+  const startNew = () => {
+    setEditing({
+      grader_student_id: '',
+      scores: { topic: 0, content: 0, narrative: 0, presentation: 0, teamwork: 0 },
+      comment: '',
+    })
+    setMsg(null)
+  }
+
+  const save = async () => {
+    if (!editing || !targetId) return
+    if (!editing.grader_student_id.trim()) { setMsg({ kind: 'err', text: '請輸入評分者學號' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      await api.post('/api/admin/grades', {
+        period,
+        grader_student_id: editing.grader_student_id.trim(),
+        target_student_id: targetId,
+        scores: editing.scores,
+        comment: editing.comment,
+      })
+      setMsg({ kind: 'ok', text: '已儲存（by admin）' })
+      setEditing(null)
+      loadDetail(targetId)
+      loadOverview()
+    } catch (err) {
+      setMsg({ kind: 'err', text: err.message })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="stack">
+      <div className="card row">
+        <label>場次：</label>
+        <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+          {periods.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+        </select>
+      </div>
+
+      {!targetId ? (
+        <div className="card table-scroll">
+          <table>
+            <thead><tr><th>學號</th><th>姓名</th><th>班級</th><th>收到評分</th><th>平均總分</th><th></th></tr></thead>
+            <tbody>
+              {overview.map((s) => (
+                <tr key={s.student_id}>
+                  <td>{s.student_id}</td><td>{s.name}</td><td>{s.class_name}</td>
+                  <td>{s.received_count}</td>
+                  <td>{s.avg_total ?? '—'}</td>
+                  <td><button className="ghost" onClick={() => loadDetail(s.student_id)}>查看</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="stack">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0 }}>
+              {overview.find((s) => s.student_id === targetId)?.name ?? targetId} 收到的評分
+            </h3>
+            <div className="row">
+              <button className="primary" onClick={startNew}>新增評分</button>
+              <button className="ghost" onClick={() => { setTargetId(null); setEditing(null); setMsg(null) }}>返回</button>
+            </div>
+          </div>
+
+          <div className="card table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>評分者</th><th>主題</th><th>內容</th><th>敘事</th><th>簡報</th><th>團隊</th>
+                  <th>總分</th><th>留言</th><th>來源</th><th>時間</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {grades.length === 0 ? (
+                  <tr><td colSpan={11} className="muted">沒有評分紀錄。</td></tr>
+                ) : grades.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.grader_name}<div className="muted">{r.grader_student_id}</div></td>
+                    <td>{r.score_topic}</td><td>{r.score_content}</td><td>{r.score_narrative}</td>
+                    <td>{r.score_presentation}</td><td>{r.score_teamwork}</td>
+                    <td><strong>{r.total}</strong></td>
+                    <td>{r.comment}</td>
+                    <td className="muted">{r.source}</td>
+                    <td className="muted">{r.submitted_at}</td>
+                    <td><button className="ghost" onClick={() => startEdit(r)}>編輯</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {editing && (
+            <div className="card stack">
+              <h3 style={{ margin: 0 }}>
+                {grades.some((g) => g.grader_student_id === editing.grader_student_id) ? '修改評分' : '新增評分'}
+                （by admin）
+              </h3>
+              <div className="row">
+                <label className="stack" style={{ gap: 4 }}>
+                  <span className="muted">評分者學號</span>
+                  <input value={editing.grader_student_id} maxLength={32}
+                    disabled={grades.some((g) => g.grader_student_id === editing.grader_student_id)}
+                    onChange={(e) => setEditing((ed) => ({ ...ed, grader_student_id: e.target.value }))} />
+                </label>
+              </div>
+              <div className="row">
+                {FIELDS.map((f) => (
+                  <label key={f.key} className="stack" style={{ gap: 4, flex: '1 1 80px' }}>
+                    <span className="muted">{f.label}（{f.max}）</span>
+                    <input type="number" min={0} max={f.max}
+                      value={editing.scores[f.key]}
+                      onChange={(e) => setEditing((ed) => ({
+                        ...ed,
+                        scores: { ...ed.scores, [f.key]: Math.min(f.max, Math.max(0, Number(e.target.value) || 0)) },
+                      }))} />
+                  </label>
+                ))}
+              </div>
+              <label className="stack" style={{ gap: 4 }}>
+                <span className="muted">留言</span>
+                <textarea rows={2} maxLength={4000} value={editing.comment}
+                  onChange={(e) => setEditing((ed) => ({ ...ed, comment: e.target.value }))} />
+              </label>
+              <div className="row">
+                <button className="primary" disabled={busy} onClick={save}>{busy ? '儲存中…' : '儲存'}</button>
+                <button className="ghost" onClick={() => setEditing(null)}>取消</button>
+              </div>
+              {msg && <div className={msg.kind === 'err' ? 'err' : 'ok'}>{msg.text}</div>}
+            </div>
+          )}
+
+          {!editing && msg && <div className={msg.kind === 'err' ? 'err' : 'ok'}>{msg.text}</div>}
+        </div>
+      )}
     </div>
   )
 }
