@@ -1,0 +1,25 @@
+# IDE
+.idea/
+/*/*.iml
+.vscode/
+.DS_Store
+
+# AI
+.claude/user-settings.json
+
+# private
+/*/.db
+/*/.env
+
+# Python
+/*/.venv/
+/*/__pycache__/
+/*/**/__pycache__/
+*.pyc
+*.egg-info/
+/*/*.egg-info/
+
+# Node
+/*/node_modules/
+/*/dist/
+
