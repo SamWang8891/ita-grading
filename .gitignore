@@ -11,6 +11,11 @@
 /*/.db
 /*/.env
 
+# local spreadsheets (student rosters etc.)
+*.xls
+*.xlsx
+*.csv
+
 # Python
 /*/.venv/
 /*/__pycache__/
