@@ -47,9 +47,7 @@ def _require_open_period(conn: sqlite3.Connection, code: str) -> None:
         raise HTTPException(status_code=409, detail="period_closed")
 
 
-def _require_target(conn: sqlite3.Connection, grader_id: str, target_id: str) -> sqlite3.Row:
-    if grader_id == target_id:
-        raise HTTPException(status_code=422, detail="cannot_grade_self")
+def _require_target(conn: sqlite3.Connection, target_id: str) -> sqlite3.Row:
     target = conn.execute(
         "SELECT student_id, name, class_name FROM permitted_users WHERE student_id = ?",
         (target_id,),
@@ -119,8 +117,7 @@ def targets(
         raise HTTPException(status_code=404, detail="period_not_found")
     rows = conn.execute(
         "SELECT student_id, name, class_name FROM permitted_users "
-        "WHERE student_id <> ? ORDER BY student_id",
-        (user.actor_id,),
+        "ORDER BY student_id",
     ).fetchall()
     latest = {
         r["target_student_id"]: r
@@ -154,7 +151,7 @@ def get_submission_detail(
 ):
     if _period_row(conn, period) is None:
         raise HTTPException(status_code=404, detail="period_not_found")
-    _require_target(conn, user.actor_id, target_id)
+    _require_target(conn, target_id)
     latest = conn.execute(
         "SELECT * FROM latest_submissions "
         "WHERE period_code = ? AND grader_student_id = ? AND target_student_id = ?",
@@ -210,7 +207,7 @@ def create_submission(
     user: CurrentUser = Depends(require_role("student")),
 ):
     _require_open_period(conn, body.period)
-    _require_target(conn, user.actor_id, body.target_student_id)
+    _require_target(conn, body.target_student_id)
     submission_id = _insert_submission(
         conn,
         request,
@@ -256,9 +253,7 @@ def create_submissions_batch(
         conn.execute("BEGIN IMMEDIATE")
         for idx, entry in enumerate(payload.entries):
             err: Optional[str] = None
-            if entry.target_student_id == user.actor_id:
-                err = "cannot_grade_self"
-            elif entry.target_student_id not in known_ids:
+            if entry.target_student_id not in known_ids:
                 err = "target_not_found"
             elif entry.target_student_id in seen_targets:
                 err = "duplicate_target_in_batch"
@@ -326,7 +321,7 @@ def download_single(
     conn: sqlite3.Connection = Depends(get_db),
     user: CurrentUser = Depends(require_role("student")),
 ):
-    target = _require_target(conn, user.actor_id, target_id)
+    target = _require_target(conn, target_id)
     latest = conn.execute(
         "SELECT * FROM latest_submissions "
         "WHERE period_code = ? AND grader_student_id = ? AND target_student_id = ?",

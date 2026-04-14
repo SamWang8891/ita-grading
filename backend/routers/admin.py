@@ -7,9 +7,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from auth import CurrentUser, hash_password, require_role
+from auth import CurrentUser, client_ip, client_ua, hash_password, require_role
 from db import get_db
 from models import (
+    AdminGradeIn,
     PeriodPatch,
     StudentIn,
     StudentPatch,
@@ -314,3 +315,108 @@ def activity(
         }
         for r in rows
     ]
+
+
+# ─── grade management ──────────────────────────────────────────────────
+
+def _total(row: sqlite3.Row) -> int:
+    return (
+        row["score_topic"] + row["score_content"] + row["score_narrative"]
+        + row["score_presentation"] + row["score_teamwork"]
+    )
+
+
+@router.get("/grades")
+def list_grades(
+    period: str = Query(..., min_length=1, max_length=32),
+    target_id: Optional[str] = Query(default=None, max_length=32),
+    conn: sqlite3.Connection = Depends(get_db),
+    _user: CurrentUser = Depends(require_role("admin")),
+):
+    if conn.execute(
+        "SELECT 1 FROM evaluation_periods WHERE code = ?", (period,)
+    ).fetchone() is None:
+        raise HTTPException(status_code=404, detail="period_not_found")
+
+    if target_id:
+        rows = conn.execute(
+            "SELECT ls.*, gu.name AS grader_name, gu.class_name AS grader_class"
+            " FROM latest_submissions ls"
+            " JOIN permitted_users gu ON gu.student_id = ls.grader_student_id"
+            " WHERE ls.period_code = ? AND ls.target_student_id = ?"
+            " ORDER BY ls.grader_student_id",
+            (period, target_id),
+        ).fetchall()
+        return [
+            {**dict(r), "total": _total(r)} for r in rows
+        ]
+
+    # overview: per-student received count + total average
+    students = conn.execute(
+        "SELECT student_id, name, class_name FROM permitted_users ORDER BY student_id"
+    ).fetchall()
+    rows = conn.execute(
+        "SELECT target_student_id, COUNT(*) AS cnt,"
+        " ROUND(AVG(score_topic+score_content+score_narrative+score_presentation+score_teamwork),1) AS avg_total"
+        " FROM latest_submissions WHERE period_code = ?"
+        " GROUP BY target_student_id",
+        (period,),
+    ).fetchall()
+    stats = {r["target_student_id"]: dict(r) for r in rows}
+    return [
+        {
+            "student_id": s["student_id"],
+            "name": s["name"],
+            "class_name": s["class_name"],
+            "received_count": stats.get(s["student_id"], {}).get("cnt", 0),
+            "avg_total": stats.get(s["student_id"], {}).get("avg_total"),
+        }
+        for s in students
+    ]
+
+
+@router.post("/grades")
+def admin_submit_grade(
+    body: AdminGradeIn,
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_db),
+    user: CurrentUser = Depends(require_role("admin")),
+):
+    if conn.execute(
+        "SELECT 1 FROM evaluation_periods WHERE code = ?", (body.period,)
+    ).fetchone() is None:
+        raise HTTPException(status_code=404, detail="period_not_found")
+    if conn.execute(
+        "SELECT 1 FROM permitted_users WHERE student_id = ?", (body.grader_student_id,)
+    ).fetchone() is None:
+        raise HTTPException(status_code=404, detail="grader_not_found")
+    if conn.execute(
+        "SELECT 1 FROM permitted_users WHERE student_id = ?", (body.target_student_id,)
+    ).fetchone() is None:
+        raise HTTPException(status_code=404, detail="target_not_found")
+
+    scores = body.scores.model_dump()
+    cur = conn.execute(
+        "INSERT INTO submissions ("
+        "  period_code, grader_student_id, target_student_id,"
+        "  score_topic, score_content, score_narrative, score_presentation, score_teamwork,"
+        "  comment, self_note, source, ua, ip"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            body.period,
+            body.grader_student_id,
+            body.target_student_id,
+            scores["topic"], scores["content"], scores["narrative"],
+            scores["presentation"], scores["teamwork"],
+            body.comment, "", "admin",
+            client_ua(request), client_ip(request),
+        ),
+    )
+    submission_id = int(cur.lastrowid)
+    log_event(conn, request, "admin_submit_grade", "admin", user.actor_id, {
+        "period": body.period,
+        "grader_student_id": body.grader_student_id,
+        "target_student_id": body.target_student_id,
+        "submission_id": submission_id,
+    })
+    return {"id": submission_id}

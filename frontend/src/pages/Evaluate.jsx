@@ -190,7 +190,22 @@ export default function Evaluate() {
       {targetId && (
         <div className="evaluate-grid">
           <div className="card stack">
-            <h3>評分</h3>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3>評分</h3>
+              {periodOpen && (
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    const full = {}
+                    for (const f of FIELDS) full[f.key] = f.max
+                    setScores(full)
+                  }}
+                >
+                  快速滿分評分
+                </button>
+              )}
+            </div>
             <div className="score-rows">
               {FIELDS.map((f) => (
                 <div className="score-row" key={f.key}>
