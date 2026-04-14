@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, downloadFile } from '../api/client'
-import { useSession } from '../auth/SessionContext.jsx'
 import NumberPad from '../components/NumberPad.jsx'
 import ScoreInput, { shouldShowNumberPad } from '../components/ScoreInput.jsx'
 import TargetDropdown from '../components/TargetDropdown.jsx'
@@ -16,14 +15,8 @@ const FIELDS = [
 
 const EMPTY_SCORES = { topic: null, content: null, narrative: null, presentation: null, teamwork: null }
 
-function draftKey(grader, period, target) {
-  return `draft:${grader}:${period}:${target}`
-}
-
 export default function Evaluate() {
   const { period } = useParams()
-  const { session } = useSession()
-  const grader = session?.actor_id
 
   const [periodOpen, setPeriodOpen] = useState(true)
   const [targets, setTargets] = useState([])
@@ -61,7 +54,6 @@ export default function Evaluate() {
       setLatestTotal(null); setLatestSubmittedAt(null); setVersions([])
       return
     }
-    const draftRaw = localStorage.getItem(draftKey(grader, period, tid))
     const detail = await api.get(`/api/student/submissions/${period}/${tid}/detail`)
 
     const latest = detail.latest
@@ -73,33 +65,13 @@ export default function Evaluate() {
     setLatestSubmittedAt(latest?.submitted_at ?? null)
     setVersions(detail.versions ?? [])
 
-    if (draftRaw) {
-      try {
-        const draft = JSON.parse(draftRaw)
-        setScores({ ...baseScores, ...draft.scores })
-        setComment(draft.comment ?? latest?.comment ?? '')
-        setSelfNote(draft.self_note ?? latest?.self_note ?? '')
-        setNotice({ kind: 'info', text: '已載入此對象的本機草稿。' })
-        return
-      } catch (_) { /* fall through */ }
-    }
     setScores(baseScores)
     setComment(latest?.comment ?? '')
     setSelfNote(latest?.self_note ?? '')
     setNotice(null)
-  }, [grader, period])
+  }, [period])
 
   useEffect(() => { fetchTarget(targetId) }, [targetId, fetchTarget])
-
-  // Persist draft on any change.
-  useEffect(() => {
-    if (!targetId || !grader) return
-    const anyFilled = Object.values(scores).some((v) => v != null && v !== '')
-      || comment.trim() || selfNote.trim()
-    const key = draftKey(grader, period, targetId)
-    if (!anyFilled) { localStorage.removeItem(key); return }
-    localStorage.setItem(key, JSON.stringify({ scores, comment, self_note: selfNote, savedAt: Date.now() }))
-  }, [scores, comment, selfNote, targetId, grader, period])
 
   const total = useMemo(
     () => Object.values(scores).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0),
@@ -142,7 +114,6 @@ export default function Evaluate() {
         comment,
         self_note: selfNote,
       })
-      localStorage.removeItem(draftKey(grader, period, targetId))
       setNotice({ kind: 'ok', text: '已送出！此次送出為獨立新版本，先前版本保留於歷史紀錄。' })
       await reloadTargets()
       await fetchTarget(targetId)
